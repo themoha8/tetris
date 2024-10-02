@@ -25,7 +25,7 @@ enum {
 enum { key_esc = 27, key_down = 0x425b1b, key_space = 32,
 	   key_right = 0x435b1b, key_left = 0x445b1b };
 
-enum { field_width = 26, field_height = 26 };
+enum { field_width = 26, field_height = 14 };
 
 enum { sec_as_millisec = 1000, sec_as_nanosec = 1000000000,
 	   sec_as_microsec = 1000000, fall_delay = 500 };   
@@ -59,12 +59,12 @@ static char grid[field_height][field_width] = { 0 };
 static const struct tetromino_t tetromines[7] = {
 	/* I-tetromino (vertically) */
 	{{ {0, 0}, {0, 1}, {0, 2}, {0, 3} }},
+	/* O-tetromino (square) */
+	{{ {0, 0}, {0, 1}, {2, 0}, {2, 1} }},
 	/* J-tetromino 4 */
 	{{ {2, 0}, {2, 1}, {0, 2}, {2, 2} }},
 	/* L-tetromino */
 	{{ {0, 0}, {0, 1}, {0, 2}, {2, 2} }},
-	/* O-tetromino (square) */
-	{{ {0, 0}, {0, 1}, {2, 0}, {2, 1} }},
 	/* S-tetromino */
 	{{ {2, 0}, {4, 0}, {0, 1}, {2, 1} }},
 	/* T-tetromino */
@@ -121,11 +121,13 @@ static void print_map()
 			else if (y == map.max_y) {
 			 	set_cursor(x, y);
 			 	putchar('_');
-			}*/
+			}
+			*/
 			else
 				putchar('.');
 		}
 	}
+
 	set_color(default_font);
 }
 
@@ -170,9 +172,13 @@ static int is_collision(int dx, int dy)
 	for (i = 0; i < 4; i++) {
 		int x = tetromines[w].blocks[i].x + dx;
 		int y = tetromines[w].blocks[i].y + dy;
-		int field_x = x - map.x;
+		
+		/* -1 to make the index in the array start from 0 */
+		int field_x = x - map.x-1;
 		int field_y = y - map.y;
-		if (map.x >= x || x >= map.max_x-1 || y >= map.max_y+1
+
+		/* map.max_y+1 because there is no visible border */
+		if (map.x >= x || x >= map.max_x || y >= map.max_y+1
 			|| grid[field_y][field_x])
 			return 1;
 	}
@@ -184,39 +190,147 @@ static void new_tetromino()
 {
 	int which, seed;
 
-	seed = (rand() % (field_width-6) + 1);
-	which = rand() % 7;
-
-	if (seed % 2 != 0) {
-		if (seed != field_width-6)
-			seed++;
-		else
-			seed--;
-	}
+	/* If the remainder is 0, then add one to offset from the map border.
+	 * If the remainder is max, then result (if field_width = 26) is 20 (19+1),
+	 * but the result must be an odd number for tetramino to align correctly.
+	 */
+	seed = (rand() % (field_width-6)) + 1;
+	/* which = rand() % 7; */
+	which = rand() % 2;
+	
+	if (seed % 2 == 0)
+	 		seed++;
 
 	curr_tetromino.which = which;
-	curr_tetromino.x = map.x+1+seed;
+	curr_tetromino.x = map.x + seed;
 	curr_tetromino.y = map.y;
 	curr_tetromino.color = back_red + which;
 }
 
-static void lock_tetromino()
+void clean_full_lines()
 {
-	int i, j = 0, w = curr_tetromino.which;
+	int x, y, field_x, field_y;
 
-	for (i = 0; i < 4; i++) {
-		int x = (tetromines[w].blocks[i].x + curr_tetromino.x) - map.x;
-		int y = (tetromines[w].blocks[i].y + curr_tetromino.y) - map.y;
-		if (y >= 0) {
-			set_cursor(map.max_x+4, 3+j);
-			printf("                  ");
-			set_cursor(map.max_x+4, 3+j);
-			printf("x: %d, y: %d", x, y);
-			fflush(stdout);
-			grid[y][x] = 1;
-			j++;
+	for (y = map.y; y <= map.max_y; y++) {
+		field_y = y - map.y;
+		for (x = map.x+1; x < map.max_x; x += 2) {
+			field_x = x - map.x-1;
+			if (grid[field_y][field_x]) {
+				set_cursor(x, y);
+				set_color(grid[field_y][field_x]);
+				printf("  ");
+				set_color(default_back);
+			}
+			else {
+				set_cursor(x, y);
+				printf("..");
+
+			}
 		}
 	}
+}
+
+void remove_full_lines()
+{
+	int x, y, x2, y2, field_x, field_y;
+
+	/* walk across entire map field and find full lines */
+	for (y = map.y; y <= map.max_y; y++) {
+		int full = 1;
+		field_y = y - map.y;
+		for (x = map.x+1; x < map.max_x; x += 2) {
+			/* -1 to make the index in the array start from 0 */
+			field_x = x - map.x-1;
+			if (!grid[field_y][field_x]) {
+				full = 0;
+				break;
+			}
+		}
+
+		if (full) {
+			/* instead of full line, place all top lines, except map.y */
+			for (y2 = y; y2 > map.y+8; y2--) {
+				field_y = y2 - map.y;
+				for (x2 = map.x+1; x2 < map.max_x; x2 += 2) {
+					field_x = x2 - map.x-1;
+					grid[field_y][field_x] = grid[field_y-1][field_x];
+				}
+			}
+			/* clear the topmost line (necessary when tetramino fills
+			 * the topmost line and any bottom line is erased
+			 */
+			/*
+			for (x2 = map.x+1; x2 < map.max_x; x2 += 2) {
+				int field_x = x2 - map.x-1;
+				grid[0][field_x] = 0;
+			}
+			*/
+
+			for (x2 = map.x+1; x2 < map.max_x; x2 += 2) {
+				int field_x = x2 - map.x-1;
+				grid[field_y-1][field_x] = 0;
+			}
+
+			sleep(5);
+#ifdef TESTING_PROG
+			int i, j, k, l;
+
+			for (i = 0, j = 0; i <= field_width-2; i += 2, j += 14) {
+				set_cursor(j, map.max_y+2);
+				printf("              ");
+				set_cursor(j, map.max_y+2);
+				printf("[0][%d]: %d", i, grid[0][i]);
+			}
+			/* the very bottom of the map */
+			for (k = map.max_y-(map.y-1)-8, l = 4; k < map.max_y-(map.y-1); k++, l++) {
+				for (i = 0, j = 0; i <= field_width-2; i += 2, j += 14) {
+					set_cursor(j, map.max_y+l);
+					printf("              ");
+					set_cursor(j, map.max_y+l);
+					printf("[%d][%d]: %d", k, i, grid[k][i]);
+				}
+			}
+			fflush(stdout);
+#endif
+			sleep(10);
+		}
+	}
+	clean_full_lines();
+}
+
+static void lock_tetromino()
+{
+	int i, w = curr_tetromino.which;
+
+	for (i = 0; i < 4; i++) {
+		/* -1 to make the index in the array start from 0 */
+		int field_x = (tetromines[w].blocks[i].x + curr_tetromino.x) - map.x-1;
+		int field_y = (tetromines[w].blocks[i].y + curr_tetromino.y) - map.y;
+		
+		if (field_y >= 0)
+			grid[field_y][field_x] = curr_tetromino.color;
+	}
+
+#ifdef TESTING_PROG
+			int j, k, l;
+
+			for (i = 0, j = 0; i <= field_width-2; i += 2, j += 14) {
+				set_cursor(j, map.max_y+2);
+				printf("              ");
+				set_cursor(j, map.max_y+2);
+				printf("[0][%d]: %d", i, grid[0][i]);
+			}
+			/* the very bottom of the map */
+			for (k = map.max_y-(map.y-1)-8, l = 4; k < map.max_y-(map.y-1); k++, l++) {
+				for (i = 0, j = 0; i <= field_width-2; i += 2, j += 14) {
+					set_cursor(j, map.max_y+l);
+					printf("              ");
+					set_cursor(j, map.max_y+l);
+					printf("[%d][%d]: %d", k, i, grid[k][i]);
+				}
+			}
+			fflush(stdout);
+#endif
 }
 
 void init_game()
@@ -231,18 +345,20 @@ void init_game()
 
     ioctl(0, TIOCGWINSZ, &w);
 
-	if (w.ws_col < 80 || w.ws_row < 26) {
+	if (w.ws_col < 64 || w.ws_row < 23) {
 		fprintf(stderr, "init_game: increase the window size. " 
-			"Minimum screen size 80x26\n");
+			"Minimum screen size 65x24\n");
 		exit(1);
 	}
 
     set_terminal();
 
+    /* offset_x + field_width+2 + offset_x */
 	offset_x = (w.ws_col - (field_width+2))/2;
 	map.x = offset_x + 1;
 	map.max_x = offset_x + field_width+2;
 
+	/* offset_y + field_height + offset_y */
 	offset_y = (w.ws_row - field_height)/2;
 	map.y = offset_y + 1;
 	map.max_y = offset_y + field_height;
@@ -344,8 +460,8 @@ static void end_game()
 
 	ioctl(0, TIOCGWINSZ, &w);
 
-	x = (w.ws_col - w_game_over) / 2;
-	y = (w.ws_row - h_game_over) / 2;
+	x = ((w.ws_col - w_game_over) / 2) + 1;
+	y = ((w.ws_row - h_game_over) / 2) + 1;
 
 	clear_screen();
 
@@ -425,11 +541,13 @@ void start_game()
 				print_tetromino();
 			} else {
 			 	lock_tetromino();
+			 	remove_full_lines();
 			 	new_tetromino();
 			 	if (is_collision(curr_tetromino.x, curr_tetromino.y)) {
 			 		end_game();
 			 		game_over = 1;
-			 	}
+			 	} else
+			 		print_tetromino();
 			}
 			t1 = t2;
 		}
