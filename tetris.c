@@ -25,7 +25,7 @@ enum {
 enum { key_esc = 27, key_down = 0x425b1b, key_space = 32,
 	   key_right = 0x435b1b, key_left = 0x445b1b };
 
-enum { field_width = 26, field_height = 14 };
+enum { field_width = 26, field_height = 20 };
 
 enum { sec_as_millisec = 1000, sec_as_nanosec = 1000000000,
 	   sec_as_microsec = 1000000, fall_delay = 500 };   
@@ -56,21 +56,48 @@ static struct map_t map;
 static struct current_tetromino_t curr_tetromino;
 static char grid[field_height][field_width] = { 0 };
 
-static const struct tetromino_t tetromines[7] = {
-	/* I-tetromino (vertically) */
-	{{ {0, 0}, {0, 1}, {0, 2}, {0, 3} }},
+static const struct tetromino_t tetromines[28] = {
 	/* O-tetromino (square) */
 	{{ {0, 0}, {0, 1}, {2, 0}, {2, 1} }},
-	/* J-tetromino 4 */
-	{{ {2, 0}, {2, 1}, {0, 2}, {2, 2} }},
-	/* L-tetromino */
-	{{ {0, 0}, {0, 1}, {0, 2}, {2, 2} }},
+	{{ {0, 0}, {0, 1}, {2, 0}, {2, 1} }},
+	{{ {0, 0}, {0, 1}, {2, 0}, {2, 1} }},
+	{{ {0, 0}, {0, 1}, {2, 0}, {2, 1} }},
+
+	/* I-tetromino */
+	{{ {2, 0}, {2, 1}, {2, 2}, {2, 3} }},
+	{{ {0, 0}, {2, 0}, {4, 0}, {6, 0} }},
+	{{ {4, 0}, {4, 1}, {4, 2}, {4, 3} }},
+	{{ {0, 0}, {2, 0}, {4, 0}, {6, 0} }},
+
 	/* S-tetromino */
 	{{ {2, 0}, {4, 0}, {0, 1}, {2, 1} }},
-	/* T-tetromino */
-	{{ {0, 0}, {2, 0}, {4, 0}, {2, 1} }},
+	{{ {0, 0}, {0, 1}, {2, 1}, {2, 2} }},
+	{{ {2, 0}, {4, 0}, {0, 1}, {2, 1} }},
+	{{ {0, 0}, {0, 1}, {2, 1}, {2, 2} }},
+
 	/* Z-tetromino */
 	{{ {0, 0}, {2, 0}, {2, 1}, {4, 1} }},
+	{{ {2, 0}, {0, 1}, {2, 1}, {0, 2} }},
+	{{ {0, 0}, {2, 0}, {2, 1}, {4, 1} }},
+	{{ {2, 0}, {0, 1}, {2, 1}, {0, 2} }},
+
+	/* T-tetromino */
+	{{ {0, 0}, {2, 0}, {4, 0}, {2, 1} }},
+	{{ {2, 0}, {0, 1}, {2, 1}, {2, 2} }},
+	{{ {2, 0}, {0, 1}, {2, 1}, {4, 1} }},
+	{{ {0, 0}, {0, 1}, {2, 1}, {0, 2} }},
+
+	/* J-tetromino */
+	{{ {2, 0}, {2, 1}, {0, 2}, {2, 2} }},
+	{{ {0, 0}, {0, 1}, {2, 1}, {4, 1} }},
+	{{ {0, 0}, {2, 0}, {0, 1}, {0, 2} }},
+	{{ {0, 0}, {2, 0}, {4, 0}, {4, 1} }},
+
+	/* L-tetromino */
+	{{ {0, 0}, {0, 1}, {0, 2}, {2, 2} }},
+	{{ {0, 0}, {2, 0}, {4, 0}, {0, 1} }},
+	{{ {0, 0}, {2, 0}, {2, 1}, {2, 2} }},
+	{{ {4, 0}, {0, 1}, {2, 1}, {4, 1} }}
 };
 
 static const char *game_over_logo[5] = {
@@ -117,12 +144,6 @@ static void print_map()
 				set_cursor(x, y);
 				putchar('|');
 			}
-			/*
-			else if (y == map.max_y) {
-			 	set_cursor(x, y);
-			 	putchar('_');
-			}
-			*/
 			else
 				putchar('.');
 		}
@@ -191,12 +212,11 @@ static void new_tetromino()
 	int which, seed;
 
 	/* If the remainder is 0, then add one to offset from the map border.
-	 * If the remainder is max, then result (if field_width = 26) is 20 (19+1),
+	 * If the remainder is max, then result (if field_width = 26) is 18 (17+1),
 	 * but the result must be an odd number for tetramino to align correctly.
 	 */
-	seed = (rand() % (field_width-6)) + 1;
-	/* which = rand() % 7; */
-	which = rand() % 2;
+	seed = (rand() % (field_width-8)) + 1;
+	which = rand() % 28;
 	
 	if (seed % 2 == 0)
 	 		seed++;
@@ -204,7 +224,7 @@ static void new_tetromino()
 	curr_tetromino.which = which;
 	curr_tetromino.x = map.x + seed;
 	curr_tetromino.y = map.y;
-	curr_tetromino.color = back_red + which;
+	curr_tetromino.color = back_red + (which / 4);
 }
 
 void clean_full_lines()
@@ -249,7 +269,7 @@ void remove_full_lines()
 
 		if (full) {
 			/* instead of full line, place all top lines, except map.y */
-			for (y2 = y; y2 > map.y+8; y2--) {
+			for (y2 = y; y2 > map.y; y2--) {
 				field_y = y2 - map.y;
 				for (x2 = map.x+1; x2 < map.max_x; x2 += 2) {
 					field_x = x2 - map.x-1;
@@ -259,40 +279,10 @@ void remove_full_lines()
 			/* clear the topmost line (necessary when tetramino fills
 			 * the topmost line and any bottom line is erased
 			 */
-			/*
 			for (x2 = map.x+1; x2 < map.max_x; x2 += 2) {
 				int field_x = x2 - map.x-1;
 				grid[0][field_x] = 0;
 			}
-			*/
-
-			for (x2 = map.x+1; x2 < map.max_x; x2 += 2) {
-				int field_x = x2 - map.x-1;
-				grid[field_y-1][field_x] = 0;
-			}
-
-			sleep(5);
-#ifdef TESTING_PROG
-			int i, j, k, l;
-
-			for (i = 0, j = 0; i <= field_width-2; i += 2, j += 14) {
-				set_cursor(j, map.max_y+2);
-				printf("              ");
-				set_cursor(j, map.max_y+2);
-				printf("[0][%d]: %d", i, grid[0][i]);
-			}
-			/* the very bottom of the map */
-			for (k = map.max_y-(map.y-1)-8, l = 4; k < map.max_y-(map.y-1); k++, l++) {
-				for (i = 0, j = 0; i <= field_width-2; i += 2, j += 14) {
-					set_cursor(j, map.max_y+l);
-					printf("              ");
-					set_cursor(j, map.max_y+l);
-					printf("[%d][%d]: %d", k, i, grid[k][i]);
-				}
-			}
-			fflush(stdout);
-#endif
-			sleep(10);
 		}
 	}
 	clean_full_lines();
@@ -310,27 +300,6 @@ static void lock_tetromino()
 		if (field_y >= 0)
 			grid[field_y][field_x] = curr_tetromino.color;
 	}
-
-#ifdef TESTING_PROG
-			int j, k, l;
-
-			for (i = 0, j = 0; i <= field_width-2; i += 2, j += 14) {
-				set_cursor(j, map.max_y+2);
-				printf("              ");
-				set_cursor(j, map.max_y+2);
-				printf("[0][%d]: %d", i, grid[0][i]);
-			}
-			/* the very bottom of the map */
-			for (k = map.max_y-(map.y-1)-8, l = 4; k < map.max_y-(map.y-1); k++, l++) {
-				for (i = 0, j = 0; i <= field_width-2; i += 2, j += 14) {
-					set_cursor(j, map.max_y+l);
-					printf("              ");
-					set_cursor(j, map.max_y+l);
-					printf("[%d][%d]: %d", k, i, grid[k][i]);
-				}
-			}
-			fflush(stdout);
-#endif
 }
 
 void init_game()
@@ -389,21 +358,27 @@ void restore_game(void)
     clear_screen();
 }
 
-/*
 void rotate_tetromino()
 {
-	struct tetromino_t rotated;
-	int i;
+	int old_w, w;
 
-	for (i = 0; i < 4; i++) {
-		rotated.blocks[i].x = -curr_tetromino.t.blocks[i].y; 
-		rotated.blocks[i].y = curr_tetromino.t.blocks[i].x; 
-	}
+	old_w = curr_tetromino.which;
 
-	clean_tetromino();
-	curr_tetromino.t = rotated;
+	w = (curr_tetromino.which+1) % 4;
+	if (w == 0)
+		curr_tetromino.which -= 3;
+	else
+		curr_tetromino.which++;
+
+	if(is_collision(curr_tetromino.x, curr_tetromino.y))
+		curr_tetromino.which = old_w;
+	
+	set_cursor(map.x, map.max_y+2);
+	printf("old_w: %d", old_w);
+	set_cursor(map.x, map.max_y+3);
+	printf("new_w: %d", curr_tetromino.which);
+	fflush(stdout);
 }
-*/
 
 static int diff_timestamps(const struct timespec *start, const struct timespec *end)
 {
@@ -523,6 +498,12 @@ void start_game()
 			case 'q':
 			case 'Q':
 				game_over = 1;
+				break;
+			case 'r':
+			case 'R':
+				clean_tetromino();
+				rotate_tetromino();
+				print_tetromino();
 				break;
 			case key_space:
 				pause_game();

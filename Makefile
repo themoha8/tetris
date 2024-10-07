@@ -6,8 +6,6 @@ CC = gcc
 
 ifeq ($(RELEASE), 1)
 	CFLAGS = -Wall -std=gnu89 -pedantic -O2
-else ifeq ($(TESTING), 1)
-	CFLAGS = -Wall -D TESTING_PROG=1 -std=gnu89 -pedantic -g -O0
 else
 	CFLAGS = -Wall -std=gnu89 -pedantic -g -O0
 endif
