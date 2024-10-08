@@ -1,3 +1,4 @@
+#include <bits/pthreadtypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h> /* isatty, usleep */
@@ -11,6 +12,9 @@ enum {
 	default_attr = 0,
 	blinking = 5,
 	font_white = 37,
+	font_cyan = 34,
+	font_red = 31,
+	font_purple = 35,
 	default_font = 39,
 	back_red = 41,
 	back_green = 42,
@@ -25,7 +29,7 @@ enum {
 enum { key_esc = 27, key_down = 0x425b1b, key_space = 32,
 	   key_right = 0x435b1b, key_left = 0x445b1b };
 
-enum { field_width = 26, field_height = 20 };
+enum { field_width = 26, field_height = 20, frame_width = 9, frame_height = 5 };
 
 enum { sec_as_millisec = 1000, sec_as_nanosec = 1000000000,
 	   sec_as_microsec = 1000000, fall_delay = 500 };   
@@ -43,18 +47,33 @@ struct tetromino_t {
 struct map_t {
 	int x, y;
 	int max_x, max_y;
-	int color;
+	int font_color;
 };
 
 struct current_tetromino_t {
 	int which;
 	int x, y;
-	int color;
+	int back_color;
+};
+
+struct score_t {
+	int sc;
+	int multip;
+	int x, y;
+	int font_color;
+};
+
+struct frame_t {
+	int x, y;
+	int font_color;
 };
 
 static struct map_t map;
 static struct current_tetromino_t curr_tetromino;
+static struct current_tetromino_t next_tetromino;
 static char grid[field_height][field_width] = { 0 };
+static struct score_t score = { 0 };
+static struct frame_t frame = { 0 };
 
 static const struct tetromino_t tetromines[28] = {
 	/* O-tetromino (square) */
@@ -132,12 +151,118 @@ inline void set_color(int color)
 	printf("\x1b[%dm", color);
 }
 
+static void clean_tetromino_frame()
+{
+	int i, w = next_tetromino.which;
+	int offset_x = 2, offset_y = 1;
+
+	for (i = 0; i <4; i++) {
+		if (tetromines[w].blocks[i].x > 2)
+			offset_x = 0;
+		if (tetromines[w].blocks[i].y > 2)
+			offset_y = 0;
+	}
+
+	for (i = 0; i < 4; i++) {
+		set_cursor(tetromines[w].blocks[i].x + frame.x+1+offset_x,
+				   tetromines[w].blocks[i].y + frame.y+1+offset_y);
+		printf("  ");
+	}
+}
+
+static void print_tetromino_frame()
+{
+	int i, w = next_tetromino.which;
+	int offset_x = 2, offset_y = 1;
+
+	for (i = 0; i <4; i++) {
+		if (tetromines[w].blocks[i].x > 2)
+			offset_x = 0;
+		if (tetromines[w].blocks[i].y > 2)
+			offset_y = 0;
+	}
+
+	set_color(next_tetromino.back_color);
+	for (i = 0; i < 4; i++) {
+		set_cursor(tetromines[w].blocks[i].x + frame.x+1+offset_x,
+				   tetromines[w].blocks[i].y + frame.y+1+offset_y);
+		printf("  ");
+	}
+	set_color(default_back);
+}
+
+static void print_frame()
+{
+	int x, y, max_x, max_y;
+
+	max_x = frame.x + frame_width;
+	max_y = frame.y + frame_height;
+
+	set_color(frame.font_color);
+	/* 4 is "Next" */
+	set_cursor((frame.x + ((frame_width-4)/2+1)), frame.y-1);
+	printf("Next");
+
+	for (y = frame.y; y <= max_y; y++) {
+		for (x = frame.x; x <= max_x; x++) {
+			set_cursor(x, y);
+
+			if (x == frame.x && y == frame.y)
+				printf("┌");
+			else if (x == max_x && y == frame.y)
+				printf("┐");
+			else if (x == frame.x && y == max_y)
+				printf("└");
+			else if (x == max_x && y == max_y)
+				printf("┘");
+			else if (x == frame.x || x == max_x) {
+				printf("│");
+			}
+			else if (y == frame.y || y == max_y) {
+				printf("─");
+			}
+			else
+				putchar(' ');
+		}
+	}
+	set_color(default_font);
+
+}
+static void print_score()
+{
+	score.sc = score.sc + (score.multip * 100);
+	score.multip = 0;
+
+	/* clean score */
+	set_cursor(score.x, score.y);
+	printf("               ");
+
+	set_color(score.font_color);
+	set_cursor(score.x, score.y);
+	printf("Score: %d", score.sc);
+	set_color(default_font);
+}
+
+static void print_help()
+{
+	set_cursor(map.x-20, map.y);
+	printf("L-arrow or a: left");
+	set_cursor(map.x-20, map.y+1);
+	printf("R-arrow or d: right");
+	set_cursor(map.x-20, map.y+2);
+	printf("D-arrow or s: down");
+	set_cursor(map.x-20, map.y+3);
+	printf("Enter or q: quit");
+	set_cursor(map.x-20, map.y+4);
+	printf("Space: pause");
+}
+
 static void print_map()
 {
 	int x, y;
 
 	clear_screen();
-	set_color(map.color);
+	set_color(map.font_color);
 	for (y = map.y; y <= map.max_y; y++) {
 		for (x = map.x; x <= map.max_x; x++) {
 			if (x == map.x || x == map.max_x) {
@@ -167,7 +292,7 @@ static void print_tetromino()
 {
 	int i, w = curr_tetromino.which;
 
-	set_color(curr_tetromino.color);
+	set_color(curr_tetromino.back_color);
 	for (i = 0; i < 4; i++) {
 		set_cursor(tetromines[w].blocks[i].x + curr_tetromino.x,
 				   tetromines[w].blocks[i].y + curr_tetromino.y);
@@ -221,10 +346,10 @@ static void new_tetromino()
 	if (seed % 2 == 0)
 	 		seed++;
 
-	curr_tetromino.which = which;
-	curr_tetromino.x = map.x + seed;
-	curr_tetromino.y = map.y;
-	curr_tetromino.color = back_red + (which / 4);
+	curr_tetro->which = which;
+	curr_tetro->x = map.x + seed;
+	curr_tetro->y = map.y;
+	curr_tetro->back_color = back_red + (which / 4);
 }
 
 void clean_full_lines()
@@ -268,6 +393,7 @@ void remove_full_lines()
 		}
 
 		if (full) {
+			score.multip++;
 			/* instead of full line, place all top lines, except map.y */
 			for (y2 = y; y2 > map.y; y2--) {
 				field_y = y2 - map.y;
@@ -298,7 +424,7 @@ static void lock_tetromino()
 		int field_y = (tetromines[w].blocks[i].y + curr_tetromino.y) - map.y;
 		
 		if (field_y >= 0)
-			grid[field_y][field_x] = curr_tetromino.color;
+			grid[field_y][field_x] = curr_tetromino.back_color;
 	}
 }
 
@@ -314,9 +440,9 @@ void init_game()
 
     ioctl(0, TIOCGWINSZ, &w);
 
-	if (w.ws_col < 64 || w.ws_row < 23) {
+	if (w.ws_col < 79 || w.ws_row < 23) {
 		fprintf(stderr, "init_game: increase the window size. " 
-			"Minimum screen size 65x24\n");
+			"Minimum screen size 80x24\n");
 		exit(1);
 	}
 
@@ -332,13 +458,27 @@ void init_game()
 	map.y = offset_y + 1;
 	map.max_y = offset_y + field_height;
 
-	map.color = font_white;
+	map.font_color = font_white;
 
 	print_map();
 
 	srand(time(NULL));
-	new_tetromino();
+	new_tetromino(&curr_tetromino);
+	new_tetromino(&next_tetromino);
 	print_tetromino();
+
+	frame.x = map.max_x + 2;
+	frame.y = map.y+1; /* +1 for "Next" text */
+	frame.font_color = font_purple;
+	print_frame();
+	print_tetromino_frame();
+
+	score.x = frame.x;
+	score.y = frame.y + frame_height + 2;
+	score.font_color = font_red;
+	print_score();
+
+	print_help();
 	hide_cursor();
 	fflush(stdout);
 }
@@ -372,12 +512,6 @@ void rotate_tetromino()
 
 	if(is_collision(curr_tetromino.x, curr_tetromino.y))
 		curr_tetromino.which = old_w;
-	
-	set_cursor(map.x, map.max_y+2);
-	printf("old_w: %d", old_w);
-	set_cursor(map.x, map.max_y+3);
-	printf("new_w: %d", curr_tetromino.which);
-	fflush(stdout);
 }
 
 static int diff_timestamps(const struct timespec *start, const struct timespec *end)
@@ -440,12 +574,10 @@ static void end_game()
 
 	clear_screen();
 
-	/* set_color(blinking); */
 	for (i = 0; i < h_game_over; i++) {
 		set_cursor(x, y+i);
 		printf("%s", game_over_logo[i]);
 	}
-	/* set_color(default_attr); */
 	fflush(stdout);
 	sleep(2);
 }
@@ -523,7 +655,11 @@ void start_game()
 			} else {
 			 	lock_tetromino();
 			 	remove_full_lines();
-			 	new_tetromino();
+			 	print_score();
+			 	curr_tetromino = next_tetromino;
+			 	clean_tetromino_frame();
+			 	new_tetromino(&next_tetromino);
+			 	print_tetromino_frame();
 			 	if (is_collision(curr_tetromino.x, curr_tetromino.y)) {
 			 		end_game();
 			 		game_over = 1;

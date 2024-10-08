@@ -5,7 +5,7 @@ OBJMODULES = $(addprefix $(OBJ_PATH), $(SRCMODULES:.c=.o))
 CC = gcc 
 
 ifeq ($(RELEASE), 1)
-	CFLAGS = -Wall -std=gnu89 -pedantic -O2
+	CFLAGS = -Wall -static -std=gnu89 -pedantic -O2
 else
 	CFLAGS = -Wall -std=gnu89 -pedantic -g -O0
 endif
