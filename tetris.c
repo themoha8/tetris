@@ -332,7 +332,7 @@ static int is_collision(int dx, int dy)
 	return 0;
 }
 
-static void new_tetromino()
+static void new_tetromino(struct current_tetromino_t *curr_tetro)
 {
 	int which, seed;
 

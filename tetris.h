@@ -3,6 +3,6 @@
 
 void init_game();
 void start_game();
-void restore_game(void);
+void restore_game();
 
 #endif
