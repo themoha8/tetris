@@ -1,6 +1,4 @@
-#include <bits/pthreadtypes.h>
 #include <stdio.h>
-#include <string.h>
 #include <unistd.h> /* isatty, usleep */
 #include <sys/ioctl.h> /* ioctl */
 #include <stdlib.h> /* exit */
@@ -126,27 +124,27 @@ static const char *game_over_logo[5] = {
 " | |_| || (_| || | | | | ||  __/ | |_| | \\ V /|  __/| |   ",
 "  \\____| \\__,_||_| |_| |_| \\___|  \\___/   \\_/  \\___||_|   " };                                                        
 
-inline void hide_cursor()
+inline static void hide_cursor()
 {
 	printf("\x1b[?25l");
 }
 
-inline void set_cursor(int x, int y)
+inline static void set_cursor(int x, int y)
 {
 	printf("\x1b[%d;%dH", y, x);
 }
 
-inline void show_cursor()
+inline static void show_cursor()
 {
 	printf("\x1b[?25h");
 }
 
-inline void clear_screen()
+inline static void clear_screen()
 {
 	printf("\x1b[2J");
 }
 
-inline void set_color(int color)
+inline static void set_color(int color)
 {
 	printf("\x1b[%dm", color);
 }
@@ -226,8 +224,8 @@ static void print_frame()
 		}
 	}
 	set_color(default_font);
-
 }
+
 static void print_score()
 {
 	score.sc = score.sc + (score.multip * 100);
@@ -273,7 +271,6 @@ static void print_map()
 				putchar('.');
 		}
 	}
-
 	set_color(default_font);
 }
 
@@ -549,6 +546,7 @@ static void pause_game()
 				break;
 			case 'Q':
 			case 'q':
+			case key_esc:
 				restore_game();
 				exit(0);
 				break;

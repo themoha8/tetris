@@ -1,6 +1,6 @@
 #include "tetris.h"
 
-int main(void)
+int main()
 {
 	init_game();
 	start_game();
