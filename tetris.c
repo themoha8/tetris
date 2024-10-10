@@ -1,3 +1,12 @@
+#if FOR_WINDOWS
+
+#include <Windows.h>
+#include <stdio.h>
+#include <time.h> /* time */
+#include <conio.h>
+
+#else
+
 #include <stdio.h>
 #include <unistd.h> /* isatty, usleep */
 #include <sys/ioctl.h> /* ioctl */
@@ -5,6 +14,8 @@
 #include <time.h> /* time */
 #include <termios.h> /* tcgetattr, tcsetattr */
 #include <fcntl.h> /* fcntl */
+
+#endif
 
 enum {
 	default_attr = 0,
@@ -65,6 +76,21 @@ struct frame_t {
 	int x, y;
 	int font_color;
 };
+
+#if FOR_WINDOWS
+
+/* _getch */
+enum { c_left = 75, c_right = 77, c_down = 80 };
+
+struct win_t {
+	int width, height;
+	HANDLE out;
+	DWORD cls_mode_out;
+};
+
+static struct win_t win;
+
+#endif
 
 static struct map_t map;
 static struct current_tetromino_t curr_tetromino;
@@ -205,6 +231,27 @@ static void print_frame()
 		for (x = frame.x; x <= max_x; x++) {
 			set_cursor(x, y);
 
+#if FOR_WINDOWS
+
+			if (x == frame.x && y == frame.y)
+				printf("*");
+			else if (x == max_x && y == frame.y)
+				printf("*");
+			else if (x == frame.x && y == max_y)
+				printf("*");
+			else if (x == max_x && y == max_y)
+				printf("*");
+			else if (x == frame.x || x == max_x) {
+				printf("|");
+			}
+			else if (y == frame.y || y == max_y) {
+				printf("-");
+			}
+			else
+				putchar(' ');
+
+#else
+
 			if (x == frame.x && y == frame.y)
 				printf("┌");
 			else if (x == max_x && y == frame.y)
@@ -221,6 +268,8 @@ static void print_frame()
 			}
 			else
 				putchar(' ');
+
+#endif
 		}
 	}
 	set_color(default_font);
@@ -296,16 +345,6 @@ static void print_tetromino()
 		printf("  ");
 	}
 	set_color(default_back);
-}
-
-static void set_terminal()
-{
-	struct termios ts;
-
-    tcgetattr(0, &ts);
-   	ts.c_lflag &= ~(ICANON|ECHO);
-    ts.c_cc[VMIN] = 0;
-    tcsetattr(0, TCSANOW, &ts);
 }
 
 static int is_collision(int dx, int dy)
@@ -421,8 +460,286 @@ static void lock_tetromino()
 		int field_y = (tetromines[w].blocks[i].y + curr_tetromino.y) - map.y;
 		
 		if (field_y >= 0)
-			grid[field_y][field_x] = curr_tetromino.back_color;
+			grid[field_y][field_x] = (char)curr_tetromino.back_color;
 	}
+}
+
+void rotate_tetromino()
+{
+	int old_w, w;
+
+	old_w = curr_tetromino.which;
+
+	w = (curr_tetromino.which+1) % 4;
+	if (w == 0)
+		curr_tetromino.which -= 3;
+	else
+		curr_tetromino.which++;
+
+	if(is_collision(curr_tetromino.x, curr_tetromino.y))
+		curr_tetromino.which = old_w;
+}
+
+#if FOR_WINDOWS
+
+static void set_terminal_win()
+{
+	DWORD out_cls_mode;
+
+	/* setup console (enable sequence control) */
+	if (!GetConsoleMode(win.out, &out_cls_mode)) {
+		fprintf(stderr, "GetConsoleModeOut");
+		exit(GetLastError());
+	}
+
+	win.cls_mode_out = out_cls_mode;
+
+	out_cls_mode = out_cls_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+
+	if (!SetConsoleMode(win.out, out_cls_mode)) {
+		fprintf(stderr, "SetConsoleModeOut");
+		exit(GetLastError());
+	}
+
+	/* set console title */
+	printf("\x1b]0;Snake\x1b\x5c");
+}
+
+void restore_game_win()
+{
+	set_cursor(0, 0);
+    show_cursor();
+    clear_screen();
+
+	SetConsoleMode(win.out, win.cls_mode_out);
+}
+
+void init_game_win()
+{
+	CONSOLE_SCREEN_BUFFER_INFO win_info;
+	int offset_x, offset_y;
+
+	win.out = GetStdHandle(STD_OUTPUT_HANDLE);
+	if (win.out == INVALID_HANDLE_VALUE) {
+		printf("GetStdHandleOut\n");
+		exit(GetLastError());
+	}
+
+	GetConsoleScreenBufferInfo(win.out, &win_info);
+	win.width = win_info.srWindow.Right - win_info.srWindow.Left + 1;
+	win.height = win_info.srWindow.Bottom - win_info.srWindow.Top + 1;
+
+	if (win.width < 79 || win.height < 23) {
+		fprintf(stderr, "init_game: increase the window size. "
+			"Minimum screen size 80x24\n");
+		Sleep(3000);
+		exit(1);
+	}
+
+	set_terminal_win();
+
+    /* offset_x + field_width+2 + offset_x */
+	offset_x = (win.width - (field_width+2))/2;
+	map.x = offset_x + 1;
+	map.max_x = offset_x + field_width+2;
+
+	/* offset_y + field_height + offset_y */
+	offset_y = (win.height - field_height)/2;
+	map.y = offset_y + 1;
+	map.max_y = offset_y + field_height;
+
+	map.font_color = font_white;
+
+	print_map();
+
+	srand((int)time(NULL));
+	new_tetromino(&curr_tetromino);
+	new_tetromino(&next_tetromino);
+	print_tetromino();
+
+	frame.x = map.max_x + 2;
+	frame.y = map.y+1; /* +1 for "Next" text */
+	frame.font_color = font_purple;
+	print_frame();
+	print_tetromino_frame();
+
+	score.x = frame.x;
+	score.y = frame.y + frame_height + 2;
+	score.font_color = font_red;
+	print_score();
+
+	print_help();
+	hide_cursor();
+	fflush(stdout);
+}
+
+static void end_game_win()
+{
+	int i, x, y;
+
+	x = ((win.width - w_game_over) / 2) + 1;
+	y = ((win.height - h_game_over) / 2) + 1;
+
+	clear_screen();
+
+	for (i = 0; i < h_game_over; i++) {
+		set_cursor(x, y+i);
+		printf("%s", game_over_logo[i]);
+	}
+	fflush(stdout);
+	Sleep(2000);
+}
+
+static void pause_game_win()
+{
+	int pause_game = 1;
+	int c;
+
+	set_cursor(map.x-5, map.y-2);
+	printf("game is paused, press space to continue");
+	fflush(stdout);
+
+	while (pause_game) {
+		if (_kbhit() != 0) {
+			c = _getch();
+			switch(c) {
+			case key_space:
+				pause_game = 0;
+				break;
+			case 'Q':
+			case 'q':
+			case key_esc:
+				restore_game_win();
+				exit(0);
+				break;
+			}
+		}
+		Sleep(30);
+	}
+
+	set_cursor(map.x-5, map.y-2);
+	printf("                                       ");
+	fflush(stdout);
+}
+
+void start_game_win()
+{
+	int game_over = 0, key;
+	int elapsed_ms = 0;
+
+	while (!game_over) {
+		if (_kbhit() != 0) {
+			/* getch returns 0 or 224 to indicate that next key is special */
+			key = _getch();
+			if (key == 0 || key == 224) {
+				key = _getch();
+				switch(key) {
+				case c_down:
+					if (!is_collision(curr_tetromino.x, curr_tetromino.y+1)) {
+						clean_tetromino();
+						curr_tetromino.y++;
+						print_tetromino();
+					}
+					break;
+				case c_right:
+					if (!is_collision(curr_tetromino.x+2, curr_tetromino.y)) {
+						clean_tetromino();
+						curr_tetromino.x += 2;
+						print_tetromino();
+					}
+					break;
+				case c_left:
+					if (!is_collision(curr_tetromino.x-2, curr_tetromino.y)) {
+						clean_tetromino();
+						curr_tetromino.x -= 2;
+						print_tetromino();
+					}
+					break;
+				}
+			} else {
+				switch(key) {
+				case 's':
+				case 'S':
+					if (!is_collision(curr_tetromino.x, curr_tetromino.y+1)) {
+						clean_tetromino();
+						curr_tetromino.y++;
+						print_tetromino();
+					}
+					break;
+				case 'd':
+				case 'D':
+					if (!is_collision(curr_tetromino.x+2, curr_tetromino.y)) {
+						clean_tetromino();
+						curr_tetromino.x += 2;
+						print_tetromino();
+					}
+					break;
+				case 'a':
+				case 'A':
+					if (!is_collision(curr_tetromino.x-2, curr_tetromino.y)) {
+						clean_tetromino();
+						curr_tetromino.x -= 2;
+						print_tetromino();
+					}
+					break;
+				case key_esc:
+				case 'q':
+				case 'Q':
+					game_over = 1;
+					break;
+				case 'r':
+				case 'R':
+					clean_tetromino();
+					rotate_tetromino();
+					print_tetromino();
+					break;
+				case key_space:
+					pause_game_win();
+					break;
+				}
+			}
+
+		}
+
+        if (elapsed_ms > fall_delay) {
+            if (!is_collision(curr_tetromino.x, curr_tetromino.y+1)) {
+				clean_tetromino();
+				curr_tetromino.y++;
+				print_tetromino();
+			} else {
+				lock_tetromino();
+				remove_full_lines();
+				print_score();
+				curr_tetromino = next_tetromino;
+				clean_tetromino_frame();
+				new_tetromino(&next_tetromino);
+				print_tetromino_frame();
+				if (is_collision(curr_tetromino.x, curr_tetromino.y)) {
+					end_game_win();
+					game_over = 1;
+				} else
+					print_tetromino();
+			}
+			elapsed_ms = 0;
+		}
+
+		fflush(stdout);
+		/* 30 ms (30000 microsec = 30 000 * 10^-3 ms = 30 ms) */
+		Sleep(30);
+		elapsed_ms += 30;
+	}
+}
+
+#else
+
+static void set_terminal()
+{
+	struct termios ts;
+
+    tcgetattr(0, &ts);
+	ts.c_lflag &= ~(ICANON|ECHO);
+    ts.c_cc[VMIN] = 0;
+    tcsetattr(0, TCSANOW, &ts);
 }
 
 void init_game()
@@ -480,12 +797,12 @@ void init_game()
 	fflush(stdout);
 }
 
-void restore_game(void)
+void restore_game()
 {
 	struct termios ts;
 
     tcgetattr(0, &ts);
-   	ts.c_lflag |= (ICANON|ECHO);
+	ts.c_lflag |= (ICANON|ECHO);
     ts.c_cc[VMIN] = 1;
     ts.c_cc[VTIME] = 0;
     tcsetattr(0, TCSANOW, &ts);
@@ -495,23 +812,7 @@ void restore_game(void)
     clear_screen();
 }
 
-void rotate_tetromino()
-{
-	int old_w, w;
-
-	old_w = curr_tetromino.which;
-
-	w = (curr_tetromino.which+1) % 4;
-	if (w == 0)
-		curr_tetromino.which -= 3;
-	else
-		curr_tetromino.which++;
-
-	if(is_collision(curr_tetromino.x, curr_tetromino.y))
-		curr_tetromino.which = old_w;
-}
-
-static int diff_timestamps(const struct timespec *start, const struct timespec *end)
+static time_t diff_timestamps(const struct timespec *start, const struct timespec *end)
 {
 	struct timespec tmp;
 
@@ -551,7 +852,6 @@ static void pause_game()
 				exit(0);
 				break;
 			}
-		
 		usleep(30000);
 	}
 
@@ -586,10 +886,12 @@ static void end_game()
  * since the first step there is no 30 ms delay and the difference will be
  * 0 ms) tetromino falls down 1 cell
  */
+
 void start_game()
 {
-	int n, elapsed_ms, game_over = 0, key = 0;
+	int n, game_over = 0, key = 0;
 	struct timespec t1, t2;
+	time_t elapsed_ms;
 
 	clock_gettime(CLOCK_MONOTONIC, &t1);
 
@@ -672,3 +974,5 @@ void start_game()
 		usleep(30000);
 	}
 }
+
+#endif
