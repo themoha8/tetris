@@ -35,7 +35,7 @@ enum {
 	default_back = 49
 };
 
-enum { key_esc = 27, key_down = 0x425b1b, key_space = 32,
+enum { key_esc = 27, key_up = 0x415b1b, key_down = 0x425b1b, key_space = 32,
 	   key_right = 0x435b1b, key_left = 0x445b1b };
 
 enum { field_width = 26, field_height = 20, frame_width = 9, frame_height = 5 };
@@ -80,7 +80,7 @@ struct frame_t {
 #if FOR_WINDOWS
 
 /* _getch */
-enum { c_left = 75, c_right = 77, c_down = 80 };
+enum { c_up = 72, c_left = 75, c_right = 77, c_down = 80 };
 
 struct win_t {
 	int width, height;
@@ -292,15 +292,17 @@ static void print_score()
 
 static void print_help()
 {
-	set_cursor(map.x-20, map.y);
+	set_cursor(map.x-25, map.y);
 	printf("L-arrow or a: left");
-	set_cursor(map.x-20, map.y+1);
+	set_cursor(map.x-25, map.y+1);
 	printf("R-arrow or d: right");
-	set_cursor(map.x-20, map.y+2);
+	set_cursor(map.x-25, map.y+2);
 	printf("D-arrow or s: down");
-	set_cursor(map.x-20, map.y+3);
+	set_cursor(map.x-25, map.y+3);
+	printf("U-arrow or r: rotate");
+	set_cursor(map.x-25, map.y+4);
 	printf("Enter or q: quit");
-	set_cursor(map.x-20, map.y+4);
+	set_cursor(map.x-25, map.y+5);
 	printf("Space: pause");
 }
 
@@ -634,6 +636,11 @@ void start_game_win()
 			if (key == 0 || key == 224) {
 				key = _getch();
 				switch(key) {
+				case c_up:
+					clean_tetromino();
+					rotate_tetromino();
+					print_tetromino();
+					break;
 				case c_down:
 					if (!is_collision(curr_tetromino.x, curr_tetromino.y+1)) {
 						clean_tetromino();
@@ -933,6 +940,7 @@ void start_game()
 				break;
 			case 'r':
 			case 'R':
+			case key_up:
 				clean_tetromino();
 				rotate_tetromino();
 				print_tetromino();
