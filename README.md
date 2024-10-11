@@ -22,7 +22,7 @@ gcc -Wall -std=gnu89 -pedantic -O2 main.c tetris.c -o tetris
 make RELEASE=1
 ```
 
-### Building on Windows
+### Building on windows
 
 1. Take the complied program in the project's build directory
 

@@ -504,7 +504,7 @@ static void set_terminal_win()
 	}
 
 	/* set console title */
-	printf("\x1b]0;Snake\x1b\x5c");
+	printf("\x1b]0;Tetris\x1b\x5c");
 }
 
 void restore_game_win()
