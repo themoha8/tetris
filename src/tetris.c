@@ -301,7 +301,7 @@ static void print_help()
 	set_cursor(map.x-25, map.y+3);
 	printf("U-arrow or r: rotate");
 	set_cursor(map.x-25, map.y+4);
-	printf("Enter or q: quit");
+	printf("Esc or q: quit");
 	set_cursor(map.x-25, map.y+5);
 	printf("Space: pause");
 }
@@ -838,14 +838,14 @@ static time_t diff_timestamps(const struct timespec *start, const struct timespe
 static void pause_game()
 {
 	int pause_game = 1;
-	char c, n;
+	int c, n;
 
 	set_cursor(map.x-5, map.y-2);
 	printf("game is paused, press space to continue");
 	fflush(stdout);
 
 	while (pause_game) {
-		n = read(0, &c, 1);
+		n = read(0, &c, 3);
 
 		if (n)
 			switch(c) {
@@ -859,6 +859,7 @@ static void pause_game()
 				exit(0);
 				break;
 			}
+		c = 0;
 		usleep(30000);
 	}
 
